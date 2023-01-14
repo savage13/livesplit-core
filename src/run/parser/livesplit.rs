@@ -2,7 +2,7 @@
 
 use super::super::ComparisonError;
 use crate::{
-    platform::{path::PathBuf, prelude::*},
+    platform::prelude::*,
     util::xml::{
         helper::{
             attribute, attribute_escaped_err, end_tag, optional_attribute_escaped_err,
@@ -14,7 +14,6 @@ use crate::{
     AtomicDateTime, DateTime, Run, RunMetadata, Segment, Time, TimeSpan,
 };
 use alloc::borrow::Cow;
-use base64_simd::Base64;
 use core::{mem::MaybeUninit, str};
 use time::{Date, PrimitiveDateTime};
 
@@ -143,12 +142,12 @@ where
             let src = &text.as_bytes()[212..];
 
             image_buf.resize(
-                Base64::STANDARD.estimated_decoded_length(src.len()),
+                base64_simd::STANDARD.estimated_decoded_length(src.len()),
                 MaybeUninit::uninit(),
             );
 
             if let Ok(decoded) =
-                Base64::STANDARD.decode(src, base64_simd::OutBuf::uninit(image_buf))
+                base64_simd::STANDARD.decode(src, base64_simd::Out::from_uninit_slice(image_buf))
             {
                 f(&decoded[2..decoded.len() - 1]);
                 return Ok(());
@@ -427,10 +426,8 @@ fn parse_attempt_history(version: Version, reader: &mut Reader<'_>, run: &mut Ru
     }
 }
 
-/// Attempts to parse a LiveSplit splits file. In addition to the source to
-/// parse, you can provide a path to the splits file, which helps saving the
-/// splits file again later.
-pub fn parse(source: &str, path: Option<PathBuf>) -> Result<Run> {
+/// Attempts to parse a LiveSplit splits file.
+pub fn parse(source: &str) -> Result<Run> {
     let mut reader = Reader::new(source);
 
     let mut image_buf = Vec::new();
@@ -495,8 +492,6 @@ pub fn parse(source: &str, path: Option<PathBuf>) -> Result<Run> {
             source: XmlError::ElementNotFound,
         });
     }
-
-    run.set_path(path);
 
     Ok(run)
 }

@@ -2,6 +2,11 @@
 name = "livesplit-auto-splitting"
 version = "0.1.0"
 authors = ["Christopher Serr <christopher.serr@gmail.com>"]
+documentation = "https://docs.rs/livesplit-auto-splitting/"
+repository = "https://github.com/LiveSplit/livesplit-core/tree/master/crates/livesplit-auto-splitting"
+license = "Apache-2.0/MIT"
+description = "livesplit-auto-splitting is a library that provides a runtime for running auto splitters that can control a speedrun timer. These auto splitters are provided as WebAssembly modules."
+keywords = ["speedrun", "timer", "livesplit", "auto-splitting"]
 edition = "2021"
 
 [dependencies]
@@ -12,11 +17,11 @@ slotmap = { version = "1.0.2", default-features = false }
 snafu = "0.7.0"
 sysinfo = { version = "0.27.0", default-features = false, features = ["multithread"] }
 time = { version = "0.3.3", default-features = false }
-wasmtime = { version = "2.0.0", default-features = false, features = [
+wasmtime = { version = "4.0.0", default-features = false, features = [
   "cranelift",
   "parallel-compilation",
 ] }
-wasmtime-wasi = { version = "2.0.0", optional = true }
+wasmtime-wasi = { version = "4.0.0", optional = true }
 
 [features]
 unstable = ["wasmtime-wasi"]
