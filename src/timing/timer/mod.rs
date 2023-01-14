@@ -201,9 +201,12 @@ impl From<&Timer> for TimerState {
 
 impl TimerState {
     /// from file
-    pub fn from_file(path: &str) -> Self {
-        let data = std::fs::read(path).unwrap();
-        serde_json::from_slice(&data).unwrap()
+    pub fn from_file(path: &str) -> Option<Self> {
+        if let Ok(data) = std::fs::read(path) {
+            Some(serde_json::from_slice(&data).unwrap())
+        } else {
+            None
+        }
     }
     /// to_json
     pub fn to_json(&self) -> String {
