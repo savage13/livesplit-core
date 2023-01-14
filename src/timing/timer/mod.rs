@@ -56,6 +56,159 @@ pub struct Timer {
     is_game_time_paused: bool,
     game_time_pause_time: Option<TimeSpan>,
     loading_times: Option<TimeSpan>,
+    start_time_utc: AtomicDateTime,
+    start_time_with_offset_utc: AtomicDateTime,
+    adjusted_start_time_utc: AtomicDateTime,
+    use_utc: bool,
+}
+
+use serde::{Deserialize, Serialize};
+
+///
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TimerState {
+    splits: Vec<Time64>,
+    phase: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    current_split_index: Option<usize>,
+    current_timing_method: TimingMethod,
+    current_comparison: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attempt_started: Option<ADT>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    attempt_ended: Option<ADT>,
+    time_paused_at: f64,
+    is_game_time_paused: bool,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    game_time_pause_time: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    loading_times: Option<f64>,
+    //path: String,
+    // UTC TimeStamps
+    start_time_utc: ADT,
+    start_time_with_offset_utc: ADT,
+    // This gets adjusted after resuming
+    adjusted_start_time_utc: ADT,
+}
+
+impl From<TimeSpan> for f64 {
+    fn from(ts: TimeSpan) -> Self {
+        ts.to_duration().as_seconds_f64()
+    }
+}
+impl From<f64> for TimeSpan {
+    fn from(v: f64) -> Self {
+        TimeSpan::from_seconds(v)
+    }
+}
+fn ts_to_f64(ts: TimeSpan) -> f64 {
+    ts.to_duration().as_seconds_f64()
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct ADT {
+    time: String,
+    synced: bool,
+}
+
+impl From<AtomicDateTime> for ADT {
+    fn from(adt: AtomicDateTime) -> Self {
+        Self {
+            time: format!("{}", adt.time()),
+            synced: adt.synced(),
+        }
+    }
+}
+
+use time::format_description;
+impl From<&ADT> for AtomicDateTime {
+    fn from(adt: &ADT) -> Self {
+        let format = format_description::parse(
+            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour \
+             sign:mandatory]:[offset_minute]:[offset_second]",
+        )
+        .unwrap();
+        dbg!(&adt.time);
+        let dt = crate::DateTime::parse(&adt.time, &format).unwrap();
+        Self::new(dt, adt.synced)
+    }
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct Time64 {
+    #[serde(skip_serializing_if = "Option::is_none")]
+    real_time: Option<f64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    game_time: Option<f64>,
+}
+impl From<Time> for Time64 {
+    fn from(item: Time) -> Self {
+        Self {
+            real_time: item.real_time.map(ts_to_f64),
+            game_time: item.game_time.map(ts_to_f64),
+        }
+    }
+}
+impl From<&Time64> for Time {
+    fn from(item: &Time64) -> Self {
+        Time::new()
+            .with_real_time(item.real_time.map(|x| x.into()))
+            .with_game_time(item.game_time.map(|x| x.into()))
+    }
+}
+impl From<&str> for TimerPhase {
+    fn from(val: &str) -> Self {
+        if val == "NotRunning" {
+            TimerPhase::NotRunning
+        } else if val == "Running" {
+            TimerPhase::Running
+        } else if val == "Ended" {
+            TimerPhase::Ended
+        } else if val == "Paused" {
+            TimerPhase::Paused
+        } else {
+            panic!("Unknown TimerPhase value: {}", val);
+        }
+    }
+}
+
+impl From<&Timer> for TimerState {
+    fn from(timer: &Timer) -> Self {
+        let splits = timer
+            .run
+            .segments()
+            .iter()
+            .map(|seg| seg.split_time().into())
+            .collect();
+        TimerState {
+            splits: splits,
+            phase: format!("{:?}", timer.phase),
+            current_split_index: timer.current_split_index,
+            current_timing_method: timer.current_timing_method,
+            current_comparison: timer.current_comparison.clone(),
+            attempt_started: timer.attempt_started.map(|x| x.into()),
+            attempt_ended: timer.attempt_ended.map(|x| x.into()),
+            time_paused_at: ts_to_f64(timer.time_paused_at),
+            is_game_time_paused: timer.is_game_time_paused,
+            game_time_pause_time: timer.game_time_pause_time.map(ts_to_f64),
+            loading_times: timer.loading_times.map(ts_to_f64),
+            start_time_utc: timer.start_time_utc.into(),
+            start_time_with_offset_utc: timer.start_time_with_offset_utc.into(),
+            adjusted_start_time_utc: timer.adjusted_start_time_utc.into(),
+        }
+    }
+}
+
+impl TimerState {
+    /// from file
+    pub fn from_file(path: &str) -> Self {
+        let data = std::fs::read(path).unwrap();
+        serde_json::from_slice(&data).unwrap()
+    }
+    /// to_json
+    pub fn to_json(&self) -> String {
+        serde_json::to_string(&self).unwrap()
+    }
 }
 
 /// A snapshot represents a specific point in time that the timer was observed
@@ -106,6 +259,7 @@ impl Timer {
         run.fix_splits();
         run.regenerate_comparisons();
         let now = TimeStamp::now();
+        let now_utc = AtomicDateTime::now();
 
         Ok(Timer {
             run,
@@ -122,6 +276,10 @@ impl Timer {
             is_game_time_paused: false,
             game_time_pause_time: None,
             loading_times: None,
+            start_time_utc: now_utc,
+            start_time_with_offset_utc: now_utc,
+            adjusted_start_time_utc: now_utc,
+            use_utc: true,
         })
     }
 
@@ -130,6 +288,11 @@ impl Timer {
     #[cfg(feature = "std")]
     pub fn into_shared(self) -> SharedTimer {
         alloc::sync::Arc::new(std::sync::RwLock::new(self))
+    }
+
+    ///
+    pub fn use_utc(&mut self, use_utc: bool) {
+        self.use_utc = use_utc;
     }
 
     /// Takes out the Run from the Timer and resets the current attempt if there
@@ -191,9 +354,17 @@ impl Timer {
     }
 
     fn current_time(&self) -> Time {
+        let t0 = TimeStamp::now();
+        let t0_utc = AtomicDateTime::now();
         let real_time = match self.phase {
             NotRunning => Some(self.run.offset()),
-            Running => Some(TimeStamp::now() - self.adjusted_start_time),
+            Running => Some(t0 - self.adjusted_start_time),
+            Paused => Some(self.time_paused_at),
+            Ended => self.run.segments().last().unwrap().split_time().real_time,
+        };
+        let real_time_utc = match self.phase {
+            NotRunning => Some(self.run.offset()),
+            Running => Some(t0_utc - self.adjusted_start_time_utc),
             Paused => Some(self.time_paused_at),
             Ended => self.run.segments().last().unwrap().split_time().real_time,
         };
@@ -213,7 +384,11 @@ impl Timer {
         };
 
         Time::new()
-            .with_real_time(real_time)
+            .with_real_time(if self.use_utc {
+                real_time_utc
+            } else {
+                real_time
+            })
             .with_game_time(game_time)
     }
 
@@ -294,17 +469,22 @@ impl Timer {
     /// Starts the Timer if there is no attempt in progress. If that's not the
     /// case, nothing happens.
     pub fn start(&mut self) {
+        let t0 = TimeStamp::now();
+        let t0_utc = AtomicDateTime::now();
         if self.phase == NotRunning {
             self.phase = Running;
             self.current_split_index = Some(0);
             self.attempt_started = Some(AtomicDateTime::now());
-            self.start_time = TimeStamp::now();
+            self.start_time = t0;
+            self.start_time_utc = t0_utc;
             self.start_time_with_offset = self.start_time - self.run.offset();
             self.adjusted_start_time = self.start_time_with_offset;
             self.time_paused_at = self.run.offset();
             self.deinitialize_game_time();
             self.run.start_next_run();
 
+            self.start_time_with_offset_utc = self.start_time_utc - self.run.offset();
+            self.adjusted_start_time_utc = self.start_time_with_offset_utc;
             // FIXME: OnStart
         }
     }
@@ -339,6 +519,32 @@ impl Timer {
 
             // FIXME: OnSplit
         }
+    }
+    ///
+    pub fn timer_state(&self) -> TimerState {
+        self.into()
+    }
+    ///
+    pub fn replace_state(&mut self, state: &TimerState) {
+        for (i, split) in state.splits.iter().enumerate() {
+            self.run.segment_mut(i).set_split_time(split.into());
+        }
+        self.phase = state.phase.as_str().into();
+        self.current_split_index = state.current_split_index;
+        self.current_timing_method = state.current_timing_method;
+        self.current_comparison = state.current_comparison.clone();
+        self.attempt_started = state.attempt_started.as_ref().map(|x| x.into());
+        self.attempt_ended = state.attempt_started.as_ref().map(|x| x.into());
+        self.start_time = TimeStamp::now();
+        self.start_time_with_offset = self.start_time;
+        self.adjusted_start_time = self.start_time;
+        self.time_paused_at = state.time_paused_at.into();
+        self.is_game_time_paused = state.is_game_time_paused;
+        self.game_time_pause_time = state.game_time_pause_time.map(|x| x.into());
+        self.loading_times = state.loading_times.map(|x| x.into());
+        self.start_time_utc = (&state.start_time_utc).into();
+        self.start_time_with_offset_utc = (&state.start_time_with_offset_utc).into();
+        self.adjusted_start_time_utc = (&state.adjusted_start_time_utc).into();
     }
 
     /// Starts a new attempt or stores the current time as the time of the
@@ -450,8 +656,8 @@ impl Timer {
     pub fn resume(&mut self) {
         if self.phase == Paused {
             self.adjusted_start_time = TimeStamp::now() - self.time_paused_at;
+            self.adjusted_start_time_utc = AtomicDateTime::now() - self.time_paused_at;
             self.phase = Running;
-
             // FIXME: OnResume
         }
     }
@@ -508,6 +714,7 @@ impl Timer {
         }
 
         self.adjusted_start_time = self.start_time_with_offset;
+        self.adjusted_start_time_utc = self.start_time_with_offset_utc;
 
         // FIXME: OnUndoAllPauses
     }
@@ -546,22 +753,50 @@ impl Timer {
     /// duration only counts the time the Timer Phase has actually been
     /// `Running`.
     pub fn current_attempt_duration(&self) -> TimeSpan {
-        match self.current_phase() {
+        let t0 = TimeStamp::now();
+        let t0_utc = AtomicDateTime::now();
+        let ts = match self.current_phase() {
             NotRunning => TimeSpan::zero(),
-            Paused | Running => TimeStamp::now() - self.start_time,
+            Paused | Running => t0 - self.start_time,
             Ended => self.attempt_ended.unwrap() - self.attempt_started.unwrap(),
+        };
+        let ts_utc = match self.current_phase() {
+            NotRunning => TimeSpan::zero(),
+            Paused | Running => t0_utc - self.start_time_utc,
+            Ended => self.attempt_ended.unwrap() - self.attempt_started.unwrap(),
+        };
+        dbg!(self.current_phase(), self.start_time_utc);
+        dbg!(ts, ts_utc, self.use_utc);
+        if self.use_utc {
+            ts_utc
+        } else {
+            ts
         }
     }
 
     /// Returns the total amount of time the current attempt has been paused
     /// for. None is returned if there have not been any pauses.
     pub fn get_pause_time(&self) -> Option<TimeSpan> {
-        match self.current_phase() {
-            Paused => Some(TimeStamp::now() - self.start_time_with_offset - self.time_paused_at),
+        let t0 = TimeStamp::now();
+        let t0_utc = AtomicDateTime::now();
+        let pt = match self.current_phase() {
+            Paused => Some(t0 - self.start_time_with_offset - self.time_paused_at),
             Running | Ended if self.start_time_with_offset != self.adjusted_start_time => {
                 Some(self.adjusted_start_time - self.start_time_with_offset)
             }
             _ => None,
+        };
+        let pt_utc = match self.current_phase() {
+            Paused => Some(t0_utc - self.start_time_with_offset_utc - self.time_paused_at),
+            Running | Ended if self.start_time_with_offset_utc != self.adjusted_start_time_utc => {
+                Some(self.adjusted_start_time_utc - self.start_time_with_offset_utc)
+            }
+            _ => None,
+        };
+        if self.use_utc {
+            pt_utc
+        } else {
+            pt
         }
     }
 

@@ -84,7 +84,7 @@ pub use crate::{
     run::{Attempt, Editor as RunEditor, Run, RunMetadata, Segment, SegmentHistory},
     timing::{
         AtomicDateTime, GameTime, RealTime, Time, TimeSpan, TimeStamp, Timer, TimerPhase,
-        TimingMethod,
+        TimerState, TimingMethod,
     },
 };
 pub use livesplit_hotkey as hotkey;

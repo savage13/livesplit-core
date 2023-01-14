@@ -42,6 +42,14 @@ impl AtomicDateTime {
             synced_with_atomic_clock: false,
         }
     }
+    /// Hi
+    pub fn time(&self) -> DateTime {
+        self.time
+    }
+    /// Hi
+    pub fn synced(&self) -> bool {
+        self.synced_with_atomic_clock
+    }
 }
 
 impl Sub for AtomicDateTime {
@@ -57,5 +65,17 @@ impl Sub<DateTime> for AtomicDateTime {
 
     fn sub(self, rhs: DateTime) -> TimeSpan {
         (self.time - rhs).into()
+    }
+}
+impl Sub<time::Duration> for AtomicDateTime {
+    type Output = AtomicDateTime;
+    fn sub(self, rhs: time::Duration) -> Self {
+        Self::new(self.time - rhs, self.synced_with_atomic_clock)
+    }
+}
+impl Sub<TimeSpan> for AtomicDateTime {
+    type Output = AtomicDateTime;
+    fn sub(self, rhs: TimeSpan) -> Self {
+        self - rhs.to_duration()
     }
 }
