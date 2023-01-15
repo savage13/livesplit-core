@@ -489,6 +489,7 @@ impl Timer {
             self.start_time_with_offset_utc = self.start_time_utc - self.run.offset();
             self.adjusted_start_time_utc = self.start_time_with_offset_utc;
             // FIXME: OnStart
+            self.save_state();
         }
     }
 
@@ -519,9 +520,14 @@ impl Timer {
                 self.attempt_ended = Some(AtomicDateTime::now());
             }
             self.run.mark_as_modified();
-
+            self.save_state();
             // FIXME: OnSplit
         }
+    }
+    ///
+    pub fn save_state(&self) {
+        let timer_state = self.timer_state();
+        std::fs::write("timer_state.json", timer_state.to_json()).unwrap();
     }
     ///
     pub fn timer_state(&self) -> TimerState {
@@ -570,7 +576,7 @@ impl Timer {
 
             self.current_split_index = self.current_split_index.map(|i| i + 1);
             self.run.mark_as_modified();
-
+            self.save_state();
             // FIXME: OnSkipSplit
         }
     }
@@ -588,7 +594,7 @@ impl Timer {
             self.current_split_mut().unwrap().clear_split_info();
 
             self.run.mark_as_modified();
-
+            self.save_state();
             // FIXME: OnUndoSplit
         }
     }
@@ -650,7 +656,7 @@ impl Timer {
         if self.phase == Running {
             self.time_paused_at = self.current_time().real_time.unwrap();
             self.phase = Paused;
-
+            self.save_state();
             // FIXME: OnPause
         }
     }
@@ -661,6 +667,7 @@ impl Timer {
             self.adjusted_start_time = TimeStamp::now() - self.time_paused_at;
             self.adjusted_start_time_utc = AtomicDateTime::now() - self.time_paused_at;
             self.phase = Running;
+            self.save_state();
             // FIXME: OnResume
         }
     }

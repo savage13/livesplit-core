@@ -1,5 +1,5 @@
 #![allow(dead_code)]
-
+#![allow(non_snake_case)]
 use std::ffi::c_void;
 
 use super::cf::MachPortRef;
@@ -185,6 +185,56 @@ pub type EventTapCallBack = Option<
     ) -> EventRef,
 >;
 
+pub type CFIndex = isize;
+pub type Boolean = u8;
+pub type CFAllocatorRef = *const c_void;
+pub type CFHashCode = usize;
+
+#[repr(C)]
+pub struct __CFString(c_void);
+
+pub type CFStringRef = *const __CFString;
+
+#[repr(C)]
+pub struct __CFBoolean(c_void);
+
+pub type CFBooleanRef = *const __CFBoolean;
+
+pub type CFDictionaryRetainCallBack =
+    extern "C" fn(allocator: CFAllocatorRef, value: *const c_void) -> *const c_void;
+pub type CFDictionaryReleaseCallBack =
+    extern "C" fn(allocator: CFAllocatorRef, value: *const c_void);
+pub type CFDictionaryCopyDescriptionCallBack = extern "C" fn(value: *const c_void) -> CFStringRef;
+pub type CFDictionaryEqualCallBack =
+    extern "C" fn(value1: *const c_void, value2: *const c_void) -> Boolean;
+pub type CFDictionaryHashCallBack = extern "C" fn(value: *const c_void) -> CFHashCode;
+
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CFDictionaryKeyCallBacks {
+    pub version: CFIndex,
+    pub retain: CFDictionaryRetainCallBack,
+    pub release: CFDictionaryReleaseCallBack,
+
+    pub copyDescription: CFDictionaryCopyDescriptionCallBack,
+    pub equal: CFDictionaryEqualCallBack,
+    pub hash: CFDictionaryHashCallBack,
+}
+#[repr(C)]
+#[derive(Clone, Copy)]
+pub struct CFDictionaryValueCallBacks {
+    pub version: CFIndex,
+    pub retain: CFDictionaryRetainCallBack,
+    pub release: CFDictionaryReleaseCallBack,
+    #[allow(non_snake_case)]
+    pub copyDescription: CFDictionaryCopyDescriptionCallBack,
+    pub equal: CFDictionaryEqualCallBack,
+}
+#[repr(C)]
+pub struct __CFDictionary(c_void);
+
+pub type CFDictionaryRef = *const __CFDictionary;
+
 #[link(name = "CoreGraphics", kind = "framework")]
 extern "C" {
     pub fn CGEventTapCreate(
@@ -197,4 +247,19 @@ extern "C" {
     ) -> MachPortRef;
 
     pub fn CGEventGetIntegerValueField(event: EventRef, field: EventField) -> i64;
+    pub static kCFAllocatorDefault: CFAllocatorRef;
+    pub static kCFCopyStringDictionaryKeyCallBacks: CFDictionaryKeyCallBacks;
+    pub static kCFTypeDictionaryValueCallBacks: CFDictionaryValueCallBacks;
+    pub static kCFBooleanTrue: CFBooleanRef;
+    pub static kAXTrustedCheckOptionPrompt: CFStringRef;
+
+    pub fn CFDictionaryCreate(
+        allocator: CFAllocatorRef,
+        keys: *const *const c_void,
+        values: *const *const c_void,
+        numValues: CFIndex,
+        keyCallBacks: *const CFDictionaryKeyCallBacks,
+        valueCallBacks: *const CFDictionaryValueCallBacks,
+    ) -> CFDictionaryRef;
+    pub fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> Boolean;
 }

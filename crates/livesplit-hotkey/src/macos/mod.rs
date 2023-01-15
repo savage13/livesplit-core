@@ -119,6 +119,20 @@ impl Hook {
             );
             if port.is_null() {
                 let _ = sender.send(Err(Error::CouldntCreateEventTap));
+                // Ask the system to Show the Accessibility Option to access Key Presses
+                // https://developer.apple.com/forums/thread/109283
+                // https://stackoverflow.com/a/24100470
+                let keys = [cg::kAXTrustedCheckOptionPrompt];
+                let values = [cg::kCFBooleanTrue];
+                let options = cg::CFDictionaryCreate(
+                    cg::kCFAllocatorDefault,
+                    &keys as *const *const cg::__CFString as *const *const c_void,
+                    &values as *const *const cg::__CFBoolean as *const *const c_void,
+                    1, /* sizeof(keys) / sizeof(*keys), */
+                    &cg::kCFCopyStringDictionaryKeyCallBacks,
+                    &cg::kCFTypeDictionaryValueCallBacks,
+                );
+                cg::AXIsProcessTrustedWithOptions(options);
                 return;
             }
             let port = Owned(port);
