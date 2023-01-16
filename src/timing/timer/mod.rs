@@ -110,26 +110,20 @@ struct ADT {
     time: String,
     synced: bool,
 }
+use time::format_description::well_known::iso8601::Iso8601;
 
 impl From<AtomicDateTime> for ADT {
     fn from(adt: AtomicDateTime) -> Self {
         Self {
-            time: format!("{}", adt.time()),
+            time: adt.time.format(&Iso8601::DEFAULT).unwrap(),
             synced: adt.synced(),
         }
     }
 }
 
-use time::format_description;
 impl From<&ADT> for AtomicDateTime {
     fn from(adt: &ADT) -> Self {
-        let format = format_description::parse(
-            "[year]-[month]-[day] [hour]:[minute]:[second].[subsecond] [offset_hour \
-             sign:mandatory]:[offset_minute]:[offset_second]",
-        )
-        .unwrap();
-        dbg!(&adt.time);
-        let dt = crate::DateTime::parse(&adt.time, &format).unwrap();
+        let dt = crate::DateTime::parse(&adt.time, &Iso8601::DEFAULT).unwrap();
         Self::new(dt, adt.synced)
     }
 }
