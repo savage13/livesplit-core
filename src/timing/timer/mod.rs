@@ -7,6 +7,19 @@ use core::{mem, ops::Deref};
 #[cfg(test)]
 mod tests;
 
+pub type OnTimerChangeFunc = fn(&TimerState);
+#[derive(Clone)]
+pub struct OnTimerChange(OnTimerChangeFunc);
+
+impl std::fmt::Debug for OnTimerChange {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::result::Result<(), std::fmt::Error> {
+        f.debug_struct("OnTimerChange")
+            //.field("function", &std::any::type_name_of_val(&self.0))
+            .field("function", &"user-defined-function")
+            .finish()
+    }
+}
+
 /// A `Timer` provides all the capabilities necessary for doing speedrun attempts.
 ///
 /// # Examples
@@ -60,6 +73,7 @@ pub struct Timer {
     start_time_with_offset_utc: AtomicDateTime,
     adjusted_start_time_utc: AtomicDateTime,
     use_utc: bool,
+    on_timer_change: OnTimerChange,
 }
 
 use serde::{Deserialize, Serialize};
@@ -277,6 +291,7 @@ impl Timer {
             start_time_with_offset_utc: now_utc,
             adjusted_start_time_utc: now_utc,
             use_utc: true,
+            on_timer_change: OnTimerChange(Timer::on_timer_change_noop),
         })
     }
 
@@ -518,10 +533,18 @@ impl Timer {
             // FIXME: OnSplit
         }
     }
+
+    ///
+    fn on_timer_change_noop(_timer_state: &TimerState) {}
+
+    ///
+    pub fn set_on_timer_change(&mut self, func: OnTimerChangeFunc) {
+        self.on_timer_change = OnTimerChange(func);
+    }
     ///
     pub fn save_state(&self) {
-        let timer_state = self.timer_state();
-        std::fs::write("timer_state.json", timer_state.to_json()).unwrap();
+        let func = self.on_timer_change.0;
+        func(&self.timer_state());
     }
     ///
     pub fn timer_state(&self) -> TimerState {
@@ -529,6 +552,13 @@ impl Timer {
     }
     ///
     pub fn replace_state(&mut self, state: &TimerState) {
+        if state.splits.len() != self.run.segments().len() {
+            panic!(
+                "inconsistent state, run has {} segments, state has {} segments",
+                self.run.segments().len(),
+                state.splits.len()
+            );
+        }
         for (i, split) in state.splits.iter().enumerate() {
             self.run.segment_mut(i).set_split_time(split.into());
         }
@@ -601,6 +631,7 @@ impl Timer {
         if self.phase != NotRunning {
             self.reset_state(update_splits);
             self.reset_splits();
+            self.save_state();
         }
     }
 
