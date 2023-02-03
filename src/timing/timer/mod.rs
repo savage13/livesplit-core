@@ -78,31 +78,62 @@ pub struct Timer {
 
 use serde::{Deserialize, Serialize};
 
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, Default)]
+pub enum Action {
+    #[default]
+    None,
+    Start,
+    Split,
+    Skip,
+    Undo,
+    Reset,
+    Pause,
+    Resume,
+}
 ///
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct TimerState {
+    ///
     splits: Vec<Time64>,
-    phase: String,
+    ///
+    pub phase: String,
+    ///
     #[serde(skip_serializing_if = "Option::is_none")]
-    current_split_index: Option<usize>,
-    current_timing_method: TimingMethod,
-    current_comparison: String,
+    pub current_split_index: Option<usize>,
+    ///
+    pub current_timing_method: TimingMethod,
+    ///
+    pub current_comparison: String,
+    ///
     #[serde(skip_serializing_if = "Option::is_none")]
     attempt_started: Option<ADT>,
+    ///
     #[serde(skip_serializing_if = "Option::is_none")]
     attempt_ended: Option<ADT>,
-    time_paused_at: f64,
-    is_game_time_paused: bool,
+    ///
+    pub time_paused_at: f64,
+    ///
+    pub is_game_time_paused: bool,
+    ///
     #[serde(skip_serializing_if = "Option::is_none")]
-    game_time_pause_time: Option<f64>,
+    pub game_time_pause_time: Option<f64>,
+    ///
     #[serde(skip_serializing_if = "Option::is_none")]
-    loading_times: Option<f64>,
+    pub loading_times: Option<f64>,
     //path: String,
-    // UTC TimeStamps
+    /// UTC TimeStamps
     start_time_utc: ADT,
+    ///
     start_time_with_offset_utc: ADT,
     // This gets adjusted after resuming
+    ///
     adjusted_start_time_utc: ADT,
+    ///
+    #[serde(default)]
+    pub split_name: String,
+    ///
+    #[serde(default)]
+    pub action: Action,
 }
 
 impl From<TimeSpan> for f64 {
@@ -188,6 +219,10 @@ impl From<&Timer> for TimerState {
             .iter()
             .map(|seg| seg.split_time().into())
             .collect();
+        let split_name = match timer.current_split() {
+            Some(seg) => seg.name().to_string(),
+            None => "empty".to_string(),
+        };
         TimerState {
             splits: splits,
             phase: format!("{:?}", timer.phase),
@@ -203,6 +238,8 @@ impl From<&Timer> for TimerState {
             start_time_utc: timer.start_time_utc.into(),
             start_time_with_offset_utc: timer.start_time_with_offset_utc.into(),
             adjusted_start_time_utc: timer.adjusted_start_time_utc.into(),
+            split_name,
+            action: Action::None,
         }
     }
 }
@@ -498,7 +535,7 @@ impl Timer {
             self.start_time_with_offset_utc = self.start_time_utc - self.run.offset();
             self.adjusted_start_time_utc = self.start_time_with_offset_utc;
             // FIXME: OnStart
-            self.save_state();
+            self.save_state(Action::Start);
         }
     }
 
@@ -529,7 +566,7 @@ impl Timer {
                 self.attempt_ended = Some(AtomicDateTime::now());
             }
             self.run.mark_as_modified();
-            self.save_state();
+            self.save_state(Action::Split);
             // FIXME: OnSplit
         }
     }
@@ -542,13 +579,15 @@ impl Timer {
         self.on_timer_change = OnTimerChange(func);
     }
     ///
-    pub fn save_state(&self) {
+    pub fn save_state(&self, action: Action) {
         let func = self.on_timer_change.0;
-        func(&self.timer_state());
+        func(&self.timer_state(action));
     }
     ///
-    pub fn timer_state(&self) -> TimerState {
-        self.into()
+    pub fn timer_state(&self, action: Action) -> TimerState {
+        let mut state: TimerState = self.into();
+        state.action = action;
+        state
     }
     ///
     pub fn replace_state(&mut self, state: &TimerState) {
@@ -600,7 +639,7 @@ impl Timer {
 
             self.current_split_index = self.current_split_index.map(|i| i + 1);
             self.run.mark_as_modified();
-            self.save_state();
+            self.save_state(Action::Skip);
             // FIXME: OnSkipSplit
         }
     }
@@ -618,7 +657,7 @@ impl Timer {
             self.current_split_mut().unwrap().clear_split_info();
 
             self.run.mark_as_modified();
-            self.save_state();
+            self.save_state(Action::Undo);
             // FIXME: OnUndoSplit
         }
     }
@@ -631,7 +670,7 @@ impl Timer {
         if self.phase != NotRunning {
             self.reset_state(update_splits);
             self.reset_splits();
-            self.save_state();
+            self.save_state(Action::Reset);
         }
     }
 
@@ -681,7 +720,7 @@ impl Timer {
         if self.phase == Running {
             self.time_paused_at = self.current_time().real_time.unwrap();
             self.phase = Paused;
-            self.save_state();
+            self.save_state(Action::Pause);
             // FIXME: OnPause
         }
     }
@@ -692,7 +731,7 @@ impl Timer {
             self.adjusted_start_time = TimeStamp::now() - self.time_paused_at;
             self.adjusted_start_time_utc = AtomicDateTime::now() - self.time_paused_at;
             self.phase = Running;
-            self.save_state();
+            self.save_state(Action::Resume);
             // FIXME: OnResume
         }
     }
